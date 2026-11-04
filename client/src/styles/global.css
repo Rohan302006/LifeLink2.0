@@ -1,0 +1,39 @@
+@import "./variables.css";
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--slate-900);
+}
+
+.container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 16px;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--slate-300);
+    border-radius: var(--radius);
+    padding: 20px;
+}
+
+.btn-primary {
+    background: var(--crimson);
+    color: #fff;
+    border: 0;
+    border-radius: 999px;
+    padding: 10px 20px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-primary:hover {
+    background: var(--crimson-dark);
+}

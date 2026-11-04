@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+enum Role {
+  DONOR
+  RECEIVER
+  DOCTOR
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+// Prisma enums cannot contain "+" or "-", so A+ is A_POS, O- is O_NEG.
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+// Used for documents, donation dates and doctor approval (VERIFIED = approved).
+enum Status {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum RequestStatus {
+  PENDING
+  VERIFIED
+  FULFILLED
+  REJECTED
+}
+
+enum Component {
+  WHOLE_BLOOD
+  PLASMA
+  PLATELETS
+}
+
+enum Urgency {
+  NORMAL
+  URGENT
+  CRITICAL
+}
+
+enum DocumentType {
+  ID_PROOF
+  DONATION_PROOF
+  MEDICAL_DOC
+}
+
+enum MatchStatus {
+  NOTIFIED
+  ACCEPTED
+  DECLINED
+}
+
+// ---------- Tables ----------
+model User {
+  id                 String     @id @default(cuid())
+  email              String     @unique
+  passwordHash       String
+  role               Role
+  fullName           String
+  dateOfBirth        DateTime   @db.Date
+  gender             Gender
+  bloodGroup         BloodGroup? // doctors may leave this empty
+  phone              String
+  city               String
+  consentAt          DateTime   // when the user accepted the data-use consent
+  onboardingStep     Int        @default(1) // server enforces step order with this
+  onboardingComplete Boolean    @default(false)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  donorProfile    DonorProfile?
+  receiverProfile ReceiverProfile?
+  doctorProfile   DoctorProfile?   @relation("DoctorUser")
+
+  documents          Document[]       @relation("DocumentOwner")
+  verifiedDocuments  Document[]       @relation("DocumentVerifier")
+  donations          DonationRecord[] @relation("DonationDonor")
+  verifiedDonations  DonationRecord[] @relation("DonationVerifier")
+  requests           BloodRequest[]   @relation("RequestReceiver")
+  verifiedRequests   BloodRequest[]   @relation("RequestVerifier")
+  reviewedDoctors    DoctorProfile[]  @relation("DoctorReviewer")
+  matches            DonorMatch[]
+  auditLogs          AuditLog[]
+}
+
+model DonorProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAvailable        Boolean  @default(false)
+  verificationStatus Status   @default(PENDING)
+}
+
+model ReceiverProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verificationStatus Status   @default(PENDING)
+}
+
+model DoctorProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation("DoctorUser", fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber   String
+  hospitalName    String
+  approvalStatus  Status    @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?   // the admin who approved/rejected
+  reviewedBy      User?     @relation("DoctorReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+}
+
+model Document {
+  id              String       @id @default(cuid())
+  ownerId         String
+  owner           User         @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  type            DocumentType
+  status          Status       @default(PENDING)
+  rejectionReason String?
+  storedPath      String       // random file name inside the private folder
+  originalName    String
+  mimeType        String
+  sizeBytes       Int
+  isCurrent       Boolean      @default(true) // false = old version, shown in "history"
+  uploadedAt      DateTime     @default(now())
+  verifiedById    String?
+  verifiedBy      User?        @relation("DocumentVerifier", fields: [verifiedById], references: [id])
+  verifiedAt      DateTime?
+
+  donation DonationRecord? // set when this file is the proof of a donation
+
+  @@index([ownerId, type, isCurrent])
+}
+
+model DonationRecord {
+  id              String    @id @default(cuid())
+  donorId         String
+  donor           User      @relation("DonationDonor", fields: [donorId], references: [id], onDelete: Cascade)
+  date            DateTime  @db.Date
+  component       Component @default(WHOLE_BLOOD)
+  proofDocumentId String    @unique
+  proofDocument   Document  @relation(fields: [proofDocumentId], references: [id])
+  status          Status    @default(PENDING)
+  rejectionReason String?
+  verifiedById    String?
+  verifiedBy      User?     @relation("DonationVerifier", fields: [verifiedById], references: [id])
+  verifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([donorId, status])
+}
+
+model BloodRequest {
+  id              String        @id @default(cuid())
+  receiverId      String
+  receiver        User          @relation("RequestReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  patientName     String
+  hospital        String
+  bloodGroup      BloodGroup
+  component       Component
+  units           Int
+  urgency         Urgency
+  status          RequestStatus @default(PENDING)
+  rejectionReason String?
+  verifiedById    String?
+  verifiedBy      User?         @relation("RequestVerifier", fields: [verifiedById], references: [id])
+  verifiedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  matches DonorMatch[]
+
+  // speeds up the 24-hour duplicate check
+  @@index([patientName, hospital, bloodGroup, createdAt])
+}
+
+// Phase 7: one row per donor notified about a request.
+// Donor phone is revealed to the receiver only when status = ACCEPTED.
+model DonorMatch {
+  id          String      @id @default(cuid())
+  requestId   String
+  request     BloodRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  donorId     String
+  donor       User        @relation(fields: [donorId], references: [id], onDelete: Cascade)
+  status      MatchStatus @default(NOTIFIED)
+  createdAt   DateTime    @default(now())
+  respondedAt DateTime?
+
+  @@unique([requestId, donorId])
+}
+
+// Who looked at what, and when. Never store personal data in here, only IDs.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  action     String   // e.g. "VIEW_PROFILE", "VIEW_DOCUMENT"
+  targetType String   // e.g. "User", "Document"
+  targetId   String
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}

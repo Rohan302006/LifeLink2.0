@@ -1,0 +1,16 @@
+:root {
+    --crimson: #d62828;
+    --crimson-dark: #b91c1c;
+    --crimson-soft: #fde8e8;
+    --navy: #0f172a;
+    --slate-900: #1e293b;
+    --slate-600: #475569;
+    --slate-300: #cbd5e1;
+    --bg: #f4f4f5;
+    --card: #ffffff;
+    --green: #059669;
+    --green-soft: #d1fae5;
+    --amber: #b45309;
+    --amber-soft: #fef3c7;
+    --radius: 12px;
+}
